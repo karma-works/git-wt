@@ -1,4 +1,4 @@
-function wt {
+function wtf {
     param(
         [Parameter(ValueFromRemainingArguments = $true)]
         $Arguments
@@ -7,20 +7,17 @@ function wt {
     # Create a temporary file for directives
     $directiveFile = [System.IO.Path]::GetTempFileName()
     
-    # Set the environment variable for the gitwt process
-    $env:GITWT_DIRECTIVE_FILE = $directiveFile
+    # Set the environment variable for the wtf process
+    $env:WTF_DIRECTIVE_FILE = $directiveFile
     
     try {
-        # Run gitwt
-        & gitwt @Arguments
+        # Run wtf binary
+        & wtf.exe @Arguments
         
         # If the directive file has content, execute it
         if (Test-Path $directiveFile) {
             $content = Get-Content $directiveFile
             if ($content) {
-                # In PowerShell, we can simply execute the commands
-                # We assume git-wt writes valid PowerShell commands (like cd "path")
-                # Though currently it writes POSIX style 'cd "path"', which PS handles fine
                 Invoke-Expression $content
             }
         }
@@ -30,6 +27,6 @@ function wt {
         if (Test-Path $directiveFile) {
             Remove-Item $directiveFile
         }
-        Remove-Item Env:\GITWT_DIRECTIVE_FILE
+        Remove-Item Env:\WTF_DIRECTIVE_FILE
     }
 }

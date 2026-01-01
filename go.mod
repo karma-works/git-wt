@@ -1,4 +1,4 @@
-module github.com/hacr/git-wt
+module github.com/hacr/wtf
 
 go 1.25.5
 

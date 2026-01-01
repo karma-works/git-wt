@@ -6,7 +6,7 @@ import (
 	"os/exec"
 	"path/filepath"
 
-	"github.com/hacr/git-wt/internal/worktree"
+	"github.com/hacr/wtf/internal/worktree"
 	"github.com/spf13/cobra"
 )
 
@@ -16,8 +16,8 @@ var (
 )
 
 var rootCmd = &cobra.Command{
-	Use:   "gitwt",
-	Short: "git-wt is a wrapper to ease the use of git worktree",
+	Use:   "wtf",
+	Short: "wtf (Work Tree Flow) is a tool to manage git worktrees efficiently",
 }
 
 var listCmd = &cobra.Command{
@@ -35,9 +35,9 @@ var listCmd = &cobra.Command{
 	},
 }
 
-// writeDirective writes a shell command to the file specified by GITWT_DIRECTIVE_FILE
+// writeDirective writes a shell command to the file specified by WTF_DIRECTIVE_FILE
 func writeDirective(command string) {
-	directiveFile := os.Getenv("GITWT_DIRECTIVE_FILE")
+	directiveFile := os.Getenv("WTF_DIRECTIVE_FILE")
 	if directiveFile == "" {
 		return
 	}
