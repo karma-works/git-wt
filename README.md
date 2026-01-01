@@ -16,6 +16,8 @@
 | :--- | :--- | :--- |
 | **Switch worktrees** | `wt switch feat` | `cd ../repo.feat` |
 | **Create + Start Claude** | `wt switch -c -x claude feat` | `git worktree add -b feat ../repo.feat && cd ../repo.feat && claude` |
+| **Create + Start Antigravity** | `wt switch -c -x "antigravity chat 'Fix bug'" feat` | `git worktree add -b feat ../repo.feat && cd ../repo.feat && antigravity chat 'Fix bug'` |
+| **Create + Open VS Code** | `wt switch -c -x "code ." feat` | `git worktree add -b feat ../repo.feat && cd ../repo.feat && code .` |
 | **Clean up** | `wt remove` | `cd ../repo && git worktree remove ../repo.feat && git branch -d feat` |
 | **List with status** | `wt list` | `git worktree list` (paths only) |
 
@@ -62,7 +64,17 @@ wt switch -c feature-name
 
 ### Create and start an agent
 ```bash
+# Start Claude
 wt switch -c -x "claude" feat-agent
+
+# Start an Antigravity session with a specific prompt
+wt switch -c -x "antigravity chat 'Implement the logger'" feat-logging
+
+# Open in VS Code immediately
+wt switch -c -x "code ." feat-ui
+
+# Start GitHub Copilot CLI session
+wt switch -c -x "gh copilot suggest 'Write a python script'" feat-copilot
 ```
 
 ### Remove current worktree
