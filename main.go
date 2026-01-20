@@ -5,14 +5,15 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 
 	"github.com/hacr/wtf/internal/worktree"
 	"github.com/spf13/cobra"
 )
 
 var (
-	createFlag bool
-	execFlag   string
+	interactiveFlag bool
+	branchFlag      string
 )
 
 var rootCmd = &cobra.Command{
@@ -35,147 +36,221 @@ var listCmd = &cobra.Command{
 	},
 }
 
-// writeDirective writes a shell command to the file specified by WTF_DIRECTIVE_FILE
-func writeDirective(command string) {
-	directiveFile := os.Getenv("WTF_DIRECTIVE_FILE")
-	if directiveFile == "" {
-		return
+// prompt asks the user a y/n question.
+func askPrompt(message string, defaultYes bool) bool {
+	choices := " [y/N] "
+	if defaultYes {
+		choices = " [Y/n] "
+	}
+	fmt.Fprintf(os.Stderr, "%s%s", message, choices)
+
+	var response string
+	_, err := fmt.Scanln(&response)
+	if err != nil && err.Error() != "unexpected newline" {
+		return defaultYes
 	}
 
-	f, err := os.OpenFile(directiveFile, os.O_APPEND|os.O_WRONLY|os.O_CREATE, 0644)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Warning: failed to write to directive file: %v\n", err)
-		return
+	response = strings.ToLower(strings.TrimSpace(response))
+	if response == "" {
+		return defaultYes
 	}
-	defer f.Close()
 
-	if _, err := f.WriteString(command + "\n"); err != nil {
-		fmt.Fprintf(os.Stderr, "Warning: failed to write to directive file: %v\n", err)
+	if response == "y" || response == "yes" {
+		return true
 	}
+	return false
 }
 
-var switchCmd = &cobra.Command{
-	Use:   "switch [branch]",
-	Short: "Switch to or create a worktree",
-	Args:  cobra.ExactArgs(1),
-	RunE: func(cmd *cobra.Command, args []string) error {
-		branch := args[0]
-		repoName, err := worktree.GetRepoName()
-		if err != nil {
-			return err
-		}
+func ensureWorktree(branch string, create bool) (string, error) {
+	repoName, err := worktree.GetRepoName()
+	if err != nil {
+		return "", err
+	}
 
-		path := worktree.GetPath(repoName, branch)
+	path := worktree.GetPath(repoName, branch)
 
-		if createFlag {
-			fmt.Printf("Creating worktree at %s...\n", path)
+	if create {
+		// Check if it already exists before trying to add
+		if _, err := os.Stat(path); os.IsNotExist(err) {
+			fmt.Fprintf(os.Stderr, "Creating worktree at %s...\n", path)
 			if err := worktree.Add(branch, path, true); err != nil {
-				return err
+				return "", err
 			}
 		}
+	}
 
-		// Check if path exists
-		absPath, err := filepath.Abs(path)
-		if err != nil {
-			return err
+	absPath, err := filepath.Abs(path)
+	if err != nil {
+		return "", err
+	}
+
+	if _, err := os.Stat(absPath); os.IsNotExist(err) {
+		return "", fmt.Errorf("worktree path %s does not exist. Use -c or create to create it", path)
+	}
+
+	return absPath, nil
+}
+
+func runRemove(currentDir, branch, absMainPath string, interactive bool) error {
+	if interactive {
+		if !askPrompt(fmt.Sprintf("Are you sure you want to remove worktree for branch %s?", branch), false) {
+			return nil
 		}
+	}
 
-		if _, err := os.Stat(absPath); os.IsNotExist(err) {
-			return fmt.Errorf("worktree path %s does not exist. Use -c to create it", path)
-		}
+	fmt.Fprintf(os.Stderr, "Removing worktree for branch %s...\n", branch)
 
-		if execFlag != "" {
-			fmt.Printf("Executing %s in %s...\n", execFlag, path)
-			c := exec.Command("sh", "-c", execFlag)
-			c.Dir = absPath
-			c.Stdout = os.Stdout
-			c.Stderr = os.Stderr
-			c.Stdin = os.Stdin
-			return c.Run()
-		}
+	// Move process to root directory to avoid CWD issues after removal
+	if err := os.Chdir("/"); err != nil {
+		return fmt.Errorf("failed to change directory: %w", err)
+	}
 
-		writeDirective(fmt.Sprintf("cd %q", absPath))
-		fmt.Printf("Worktree ready. Run: cd %s\n", path)
-		return nil
-	},
+	env := []string{
+		"PATH=" + os.Getenv("PATH"),
+		"HOME=" + os.Getenv("HOME"),
+		"PWD=" + absMainPath,
+	}
+
+	// 1. Remove worktree
+	c := exec.Command("git", "worktree", "remove", currentDir)
+	c.Dir = absMainPath
+	c.Env = env
+	c.Stdout = os.Stderr
+	c.Stderr = os.Stderr
+	if err := c.Run(); err != nil {
+		return fmt.Errorf("failed to remove worktree: %w", err)
+	}
+
+	// 2. Delete branch
+	c = exec.Command("git", "branch", "-d", branch)
+	c.Dir = absMainPath
+	c.Env = env
+	c.Stdout = os.Stderr
+	c.Stderr = os.Stderr
+	if err := c.Run(); err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: failed to delete branch %s: %v\n", branch, err)
+	}
+
+	fmt.Println(absMainPath)
+	return nil
+}
+
+func runCreate(branch string) error {
+	path, err := ensureWorktree(branch, true)
+	if err != nil {
+		return err
+	}
+	fmt.Println(path)
+	return nil
 }
 
 var removeCmd = &cobra.Command{
-	Use:   "remove",
-	Short: "Remove the current worktree",
+	Use:   "remove [branch]",
+	Short: "Remove a worktree (defaults to current)",
+	Args:  cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		repoName, err := worktree.GetRepoName()
 		if err != nil {
 			return err
 		}
 
-		currentDir, err := os.Getwd()
-		if err != nil {
-			return err
-		}
+		var branch string
+		var currentDir string
 
-		branch, err := worktree.GetCurrentBranch()
-		if err != nil {
-			return err
+		if len(args) > 0 {
+			branch = args[0]
+			path := worktree.GetPath(repoName, branch)
+			absPath, err := filepath.Abs(path)
+			if err != nil {
+				return err
+			}
+			currentDir = absPath
+		} else {
+			currentDir, err = os.Getwd()
+			if err != nil {
+				return err
+			}
+
+			branch, err = worktree.GetCurrentBranch()
+			if err != nil {
+				return err
+			}
 		}
 
 		if branch == "main" || branch == "master" {
 			return fmt.Errorf("cannot remove the main branch/worktree")
 		}
 
-		// Calculate main repo path
 		mainRepoPath := filepath.Join("..", repoName)
 		absMainPath, err := filepath.Abs(mainRepoPath)
 		if err != nil {
 			return err
 		}
 
-		fmt.Printf("Removing worktree for branch %s...\n", branch)
+		return runRemove(currentDir, branch, absMainPath, interactiveFlag)
+	},
+}
 
-		// Move process to root directory to avoid CWD issues after removal
-		if err := os.Chdir("/"); err != nil {
-			return fmt.Errorf("failed to change directory: %w", err)
+var execCmd = &cobra.Command{
+	Use:   "exec [prompt]",
+	Short: "Execute an agent prompt in a new worktree",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		if branchFlag == "" {
+			return fmt.Errorf("branch (-b) is required")
 		}
 
-		env := []string{
-			"PATH=" + os.Getenv("PATH"),
-			"HOME=" + os.Getenv("HOME"),
-			"PWD=" + absMainPath,
+		path, err := ensureWorktree(branchFlag, true)
+		if err != nil {
+			return err
 		}
 
-		// 1. Remove worktree
-		c := exec.Command("git", "worktree", "remove", currentDir)
-		c.Dir = absMainPath
-		c.Env = env
+		agent := os.Getenv("WTF_AGENT")
+		if agent == "" {
+			agent = "opencode"
+		}
+
+		promptStr := strings.Join(args, " ")
+		fmt.Fprintf(os.Stderr, "Executing agent %s with prompt: %s\n", agent, promptStr)
+
+		c := exec.Command(agent, args...)
+		c.Dir = path
 		c.Stdout = os.Stdout
 		c.Stderr = os.Stderr
+		c.Stdin = os.Stdin
 		if err := c.Run(); err != nil {
-			return fmt.Errorf("failed to remove worktree: %w", err)
+			return fmt.Errorf("agent failed: %w", err)
 		}
 
-		// 2. Delete branch
-		c = exec.Command("git", "branch", "-d", branch)
-		c.Dir = absMainPath
-		c.Env = env
-		c.Stdout = os.Stdout
-		c.Stderr = os.Stderr
-		if err := c.Run(); err != nil {
-			fmt.Printf("Warning: failed to delete branch %s: %v\n", branch, err)
+		if askPrompt(fmt.Sprintf("Remove worktree %s?", branchFlag), true) {
+			repoName, _ := worktree.GetRepoName()
+			mainRepoPath := filepath.Join("..", repoName)
+			absMainPath, _ := filepath.Abs(mainRepoPath)
+			return runRemove(path, branchFlag, absMainPath, false)
 		}
 
-		writeDirective(fmt.Sprintf("cd %q", absMainPath))
-		fmt.Printf("Worktree removed. Please run: cd %s\n", absMainPath)
+		fmt.Println(path)
 		return nil
 	},
 }
 
 func init() {
-	switchCmd.Flags().BoolVarP(&createFlag, "create", "c", false, "Create a new worktree")
-	switchCmd.Flags().StringVarP(&execFlag, "exec", "x", "", "Execute a command in the worktree")
+	removeCmd.Flags().BoolVarP(&interactiveFlag, "interactive", "i", false, "Prompt for confirmation before removal")
+	execCmd.Flags().StringVarP(&branchFlag, "branch", "b", "", "Branch name to create/use")
 
+	// Add 'create' command
+	createCmd := &cobra.Command{
+		Use:   "create [branch]",
+		Short: "Create and switch to a new worktree",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runCreate(args[0])
+		},
+	}
+
+	rootCmd.AddCommand(createCmd)
 	rootCmd.AddCommand(listCmd)
-	rootCmd.AddCommand(switchCmd)
 	rootCmd.AddCommand(removeCmd)
+	rootCmd.AddCommand(execCmd)
 }
 
 func main() {

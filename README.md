@@ -14,10 +14,8 @@
 
 | Task | wtf | Plain Git |
 | :--- | :--- | :--- |
-| **Switch worktrees** | `wtf switch feat` | `cd ../repo.feat` |
-| **Create + Start Claude** | `wtf switch -c -x claude feat` | `git worktree add -b feat ../repo.feat && cd ../repo.feat && claude` |
-| **Create + Start Antigravity** | `wtf switch -c -x "antigravity chat 'Fix bug'" feat` | `git worktree add -b feat ../repo.feat && cd ../repo.feat && antigravity chat 'Fix bug'` |
-| **Create + Open VS Code** | `wtf switch -c -x "code ." feat` | `git worktree add -b feat ../repo.feat && cd ../repo.feat && code .` |
+| **List worktrees** | `wtf list` | `git worktree list` |
+| **Create worktree** | `wtf create feat` | `git worktree add -b feat ../repo.feat` |
 | **Clean up** | `wtf remove` | `cd ../repo && git worktree remove ../repo.feat && git branch -d feat` |
 | **List with status** | `wtf list` | `git worktree list` (paths only) |
 
@@ -29,25 +27,58 @@ go install github.com/hacr/wtf@latest
 ```
 Ensure your `$GOPATH/bin` is in your `PATH`.
 
-### 2. Set up Shell Wrapper (Recommended)
+## Quick Start (Recommended)
 
-Since a binary cannot change the current directory of the parent shell, use the provided wrappers.
+The most efficient way to use `wtf` is via the `exec` command, which handles the entire lifecycle of a task:
 
-#### Bash / Zsh
-Add the following to your `.bashrc` or `.zshrc`:
 ```bash
-# Source the wrapper script or define as a function
+# 1. Create a worktree
+# 2. Run the agent
+# 3. Prompt for cleanup
+wtf exec -b feature-name "Implement the user login flow"
+```
+
+## Shell Integration
+
+To enable automatic directory switching for `create` and `remove` commands, add the following to your shell profile.
+
+### Bash / Zsh
+Add to `.bashrc` or `.zshrc`:
+```bash
+# This function makes 'wtf create' and 'wtf remove' 
+# automatically change your current directory.
 wtf() {
-    # Replace with actual path to the wtf wrapper
-    source /path/to/wtf "$@"
+    if [[ "$1" == "list" || "$1" == "exec" ]]; then
+        command wtf "$@"
+        return
+    }
+    
+    local out
+    out=$(command wtf "$@")
+    if [[ -d "$out" ]]; then
+        cd "$out"
+    else
+        echo "$out"
+    fi
 }
 ```
 
-#### PowerShell
-Add the following to your `$PROFILE`:
+### PowerShell
+Add to `$PROFILE`:
 ```powershell
-# Source the wrapper script
-. /path/to/wtf/wtf.ps1
+function wtf {
+    if ($args[0] -eq "list" -or $args[0] -eq "exec") {
+        & wtf.exe $args
+        return
+    }
+
+    $out = & wtf.exe $args
+    if (Test-Path $out -PathType Container) {
+        Set-Location $out
+    } else {
+        $out
+    }
+}
 ```
 
 ## Usage
@@ -57,30 +88,31 @@ Add the following to your `$PROFILE`:
 wtf list
 ```
 
-### Create and switch to a new branch/worktree
+### Create a new worktree
 ```bash
-wtf switch -c feature-name
+# If using the shell integration:
+wtf create feature-name
+
+# Otherwise, pipe to cd:
+wtf create feature-name | cd
 ```
 
-### Create and start an agent
+### Execute an agent prompt in a new worktree
 ```bash
-# Start Claude
-wtf switch -c -x "claude" feat-agent
-
-# Start an Antigravity session with a specific prompt
-wtf switch -c -x "antigravity chat 'Implement the logger'" feat-logging
-
-# Open in VS Code immediately
-wtf switch -c -x "code ." feat-ui
-
-# Start GitHub Copilot CLI session
-wtf switch -c -x "gh copilot suggest 'Write a python script'" feat-copilot
+# Creates 'feat-logging' worktree, runs 'opencode' agent, then prompts to remove
+wtf exec -b feat-logging "Implement the logging logic using logrus"
 ```
+The agent can be configured via `WTF_AGENT` environment variable (defaults to `opencode`).
 
-### Remove current worktree
+### Remove worktree
 From inside the worktree directory:
 ```bash
-wtf remove
+wtf remove | cd
+```
+
+Or remove a specific worktree by name with interactive confirmation:
+```bash
+wtf remove -i feat-logging
 ```
 
 ## License
