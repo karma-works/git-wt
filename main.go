@@ -212,8 +212,10 @@ var execCmd = &cobra.Command{
 		promptStr := strings.Join(args, " ")
 		fmt.Fprintf(os.Stderr, "Executing agent %s with prompt: %s\n", agent, promptStr)
 
-		c := exec.Command(agent, promptStr)
+		agentArgs := []string{"--prompt", promptStr}
+		c := exec.Command(agent, agentArgs...)
 		c.Dir = path
+		fmt.Fprintf(os.Stderr, "DEBUG: Executing %s with args %v in dir %s\n", agent, agentArgs, path)
 		c.Stdout = os.Stdout
 		c.Stderr = os.Stderr
 		c.Stdin = os.Stdin
