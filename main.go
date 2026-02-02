@@ -14,6 +14,7 @@ import (
 var (
 	interactiveFlag bool
 	branchFlag      string
+	forceFlag       bool
 )
 
 var rootCmd = &cobra.Command{
@@ -91,7 +92,7 @@ func ensureWorktree(branch string, create bool) (string, error) {
 	return absPath, nil
 }
 
-func runRemove(currentDir, branch, absMainPath string, interactive bool) error {
+func runRemove(currentDir, branch, absMainPath string, interactive bool, force bool) error {
 	if interactive {
 		if !askPrompt(fmt.Sprintf("Are you sure you want to remove worktree for branch %s?", branch), false) {
 			return nil
@@ -112,7 +113,13 @@ func runRemove(currentDir, branch, absMainPath string, interactive bool) error {
 	}
 
 	// 1. Remove worktree
-	c := exec.Command("git", "worktree", "remove", currentDir)
+	worktreeArgs := []string{"worktree", "remove"}
+	if force {
+		worktreeArgs = append(worktreeArgs, "--force")
+	}
+	worktreeArgs = append(worktreeArgs, currentDir)
+
+	c := exec.Command("git", worktreeArgs...)
 	c.Dir = absMainPath
 	c.Env = env
 	c.Stdout = os.Stderr
@@ -122,7 +129,15 @@ func runRemove(currentDir, branch, absMainPath string, interactive bool) error {
 	}
 
 	// 2. Delete branch
-	c = exec.Command("git", "branch", "-d", branch)
+	branchArgs := []string{"branch"}
+	if force {
+		branchArgs = append(branchArgs, "-D")
+	} else {
+		branchArgs = append(branchArgs, "-d")
+	}
+	branchArgs = append(branchArgs, branch)
+
+	c = exec.Command("git", branchArgs...)
 	c.Dir = absMainPath
 	c.Env = env
 	c.Stdout = os.Stderr
@@ -187,7 +202,7 @@ var removeCmd = &cobra.Command{
 			return err
 		}
 
-		return runRemove(currentDir, branch, absMainPath, interactiveFlag)
+		return runRemove(currentDir, branch, absMainPath, interactiveFlag, forceFlag)
 	},
 }
 
@@ -227,7 +242,7 @@ var execCmd = &cobra.Command{
 			repoName, _ := worktree.GetRepoName()
 			mainRepoPath := filepath.Join("..", repoName)
 			absMainPath, _ := filepath.Abs(mainRepoPath)
-			return runRemove(path, branchFlag, absMainPath, false)
+			return runRemove(path, branchFlag, absMainPath, false, false)
 		}
 
 		fmt.Println(path)
@@ -237,6 +252,7 @@ var execCmd = &cobra.Command{
 
 func init() {
 	removeCmd.Flags().BoolVarP(&interactiveFlag, "interactive", "i", false, "Prompt for confirmation before removal")
+	removeCmd.Flags().BoolVarP(&forceFlag, "force", "f", false, "Force removal of worktree and branch")
 	execCmd.Flags().StringVarP(&branchFlag, "branch", "b", "", "Branch name to create/use")
 
 	// Add 'create' command
