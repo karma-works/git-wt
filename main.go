@@ -256,6 +256,25 @@ var execCmd = &cobra.Command{
 	},
 }
 
+var modelsCmd = &cobra.Command{
+	Use:   "models [provider]",
+	Short: "List available models from the agent",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		agent := os.Getenv("WTF_AGENT")
+		if agent == "" {
+			agent = "opencode"
+		}
+
+		agentArgs := []string{"models"}
+		agentArgs = append(agentArgs, args...)
+
+		c := exec.Command(agent, agentArgs...)
+		c.Stdout = os.Stdout
+		c.Stderr = os.Stderr
+		return c.Run()
+	},
+}
+
 func init() {
 	removeCmd.Flags().BoolVarP(&interactiveFlag, "interactive", "i", false, "Prompt for confirmation before removal")
 	removeCmd.Flags().BoolVarP(&forceFlag, "force", "f", false, "Force removal of worktree and branch")
@@ -276,6 +295,7 @@ func init() {
 	rootCmd.AddCommand(listCmd)
 	rootCmd.AddCommand(removeCmd)
 	rootCmd.AddCommand(execCmd)
+	rootCmd.AddCommand(modelsCmd)
 }
 
 func main() {
