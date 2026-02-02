@@ -15,6 +15,7 @@ var (
 	interactiveFlag bool
 	branchFlag      string
 	forceFlag       bool
+	modelFlag       string
 )
 
 var rootCmd = &cobra.Command{
@@ -227,7 +228,12 @@ var execCmd = &cobra.Command{
 		promptStr := strings.Join(args, " ")
 		fmt.Fprintf(os.Stderr, "Executing agent %s with prompt: %s\n", agent, promptStr)
 
-		agentArgs := []string{"--prompt", promptStr}
+		agentArgs := []string{}
+		if modelFlag != "" {
+			agentArgs = append(agentArgs, "--model", modelFlag)
+		}
+		agentArgs = append(agentArgs, "--prompt", promptStr)
+
 		c := exec.Command(agent, agentArgs...)
 		c.Dir = path
 		fmt.Fprintf(os.Stderr, "DEBUG: Executing %s with args %v in dir %s\n", agent, agentArgs, path)
@@ -254,6 +260,7 @@ func init() {
 	removeCmd.Flags().BoolVarP(&interactiveFlag, "interactive", "i", false, "Prompt for confirmation before removal")
 	removeCmd.Flags().BoolVarP(&forceFlag, "force", "f", false, "Force removal of worktree and branch")
 	execCmd.Flags().StringVarP(&branchFlag, "branch", "b", "", "Branch name to create/use")
+	execCmd.Flags().StringVarP(&modelFlag, "model", "m", "", "Model to use for opencode")
 
 	// Add 'create' command
 	createCmd := &cobra.Command{
